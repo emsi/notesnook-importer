@@ -223,8 +223,27 @@ async function downloadAttachment(
   }
   if (!src) return false;
 
-  const data = await resolver(src);
-  if (!data) throw new Error(`Failed to download attachment at ${src}.`);
-
-  return data.toString("base64");
+  const maxAttempts = 5;
+  const baseDelay = 1000; // in milliseconds
+  let attempt = 0;
+  while (attempt < maxAttempts) {
+    try {
+      const data = await resolver(src);
+      if (!data) throw new Error(`Failed to download attachment at ${src}.`);
+      return data.toString("base64");
+    } catch (error: any) {
+      // Check if error indicates a 429 Too Many Requests.
+      if (
+        (error.response && error.response.status === 429) ||
+        (typeof error.message === 'string' && error.message.includes("429"))
+      ) {
+        const delay = baseDelay * Math.pow(2, attempt); // exponential backoff
+        attempt++;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      } else {
+        throw error;
+      }
+    }
+  }
+  throw new Error(`Failed to resolve attachment after ${maxAttempts} attempts due to too many requests.`);
 }
